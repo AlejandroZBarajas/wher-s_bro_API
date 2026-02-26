@@ -1,23 +1,32 @@
 """
-[PENDIENTE] Módulo de gestión de sesiones de base de datos.
-
-Este módulo manejará las sesiones y transacciones con la base de datos.
-
-Ejemplo de implementación esperada:
-    from sqlmodel import Session
-    from app.database.connection import engine
-    
-    def get_session():
-        with Session(engine) as session:
-            yield session
-    
-    # Uso en endpoints:
-    @router.get("/users/{user_id}")
-    async def get_user(user_id: int, session: Session = Depends(get_session)):
-        user = session.get(User, user_id)
-        return user
+Módulo de gestión de sesiones de base de datos.
 """
 
-# TODO: Implementar get_session() como dependencia de FastAPI
-# TODO: Configurar manejo de transacciones
-# TODO: Implementar rollback automático en caso de errores
+from sqlmodel import Session
+from app.database.connection import get_engine
+from typing import Generator
+
+
+def get_session() -> Generator[Session, None, None]:
+    """
+    Dependency para obtener una sesión de base de datos.
+    
+    Uso en endpoints:
+        @router.get("/users/{user_id}")
+        async def get_user(user_id: int, session: Session = Depends(get_session)):
+            user = session.get(User, user_id)
+            return user
+    """
+    engine = get_engine()
+    if not engine:
+        raise Exception("Base de datos no inicializada")
+    
+    with Session(engine) as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()

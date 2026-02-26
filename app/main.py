@@ -6,6 +6,7 @@ import logging
 from app.core.config import settings
 from app.core.room_manager import room_manager
 from app.api.routes import rooms, auth, websockets
+from app.database.connection import init_db, close_db
 
 # Configurar logging
 logging.basicConfig(
@@ -24,13 +25,17 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Iniciando aplicación...")
     
+    # Inicializar base de datos
+    try:
+        init_db()
+        logger.info("Base de datos inicializada")
+    except Exception as e:
+        logger.error(f"Error al inicializar BD: {e}")
+        # Continuar sin BD si falla (para desarrollo)
+    
     # Iniciar tarea de limpieza de salas
     room_manager.start_cleanup_task()
     logger.info("Tarea de limpieza de salas iniciada")
-    
-    # [PENDIENTE] Aquí se inicializaría la conexión a la base de datos
-    # from app.database.connection import engine
-    # SQLModel.metadata.create_all(engine)
     
     yield
     
@@ -38,6 +43,12 @@ async def lifespan(app: FastAPI):
     logger.info("Cerrando aplicación...")
     room_manager.stop_cleanup_task()
     logger.info("Tarea de limpieza de salas detenida")
+    
+    # Cerrar conexión a BD
+    try:
+        close_db()
+    except Exception as e:
+        logger.error(f"Error al cerrar BD: {e}")
 
 
 # Crear aplicación FastAPI
@@ -51,7 +62,7 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar orígenes permitidos
+    allow_origins=settings.get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,6 +72,7 @@ app.add_middleware(
 app.include_router(rooms.router)
 app.include_router(auth.router)
 app.include_router(websockets.router)
+
 
 @app.get("/", tags=["health"])
 async def root():
