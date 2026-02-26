@@ -5,7 +5,7 @@ import logging
 
 from app.core.config import settings
 from app.core.room_manager import room_manager
-from app.api.routes import rooms, auth
+from app.api.routes import rooms, auth, websockets
 
 # Configurar logging
 logging.basicConfig(
@@ -60,7 +60,7 @@ app.add_middleware(
 # Registrar routers
 app.include_router(rooms.router)
 app.include_router(auth.router)
-
+app.include_router(websockets.router)
 
 @app.get("/", tags=["health"])
 async def root():
