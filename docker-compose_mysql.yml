@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Base de datos MySQL
+  db:
+    image: mysql:8.0
+    container_name: location-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password_change_this}
+      MYSQL_DATABASE: location_db
+      MYSQL_USER: location_user
+      MYSQL_PASSWORD: ${DB_PASSWORD:-change_this_password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init_mysql.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "location_user", "-p${DB_PASSWORD:-change_this_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - location-network
+
+  # API FastAPI con WebSocket
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: location-api
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://location_user:${DB_PASSWORD:-change_this_password}@db:3306/location_db
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-this}
+      DEBUG: "False"
+      ROOM_CODE_LENGTH: 6
+      ROOM_CLEANUP_INTERVAL_SECONDS: 60
+      ROOM_EMPTY_TIMEOUT_SECONDS: 120
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - location-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx (Proxy Reverso + SSL)
+  nginx:
+    image: nginx:alpine
+    container_name: location-nginx
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - location-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  location-network:
+    driver: bridge
